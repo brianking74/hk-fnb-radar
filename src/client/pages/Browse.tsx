@@ -5,7 +5,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { SOURCES, SOURCE_IDS, isSourceId } from '../../shared/sources';
 import type { Entity } from '../../shared/types';
-import { fetchEntities, useApi } from '../lib/api';
+import { fetchCuisines, fetchEntities, useApi } from '../lib/api';
 import { displayName, formatDate, formatNumber } from '../lib/format';
 import { usePageTitle } from '../lib/usePageTitle';
 import PageHeading from '../components/PageHeading';
@@ -26,8 +26,14 @@ export default function Browse() {
   const q = searchParams.get('q') ?? '';
   const source = searchParams.get('source') ?? '';
   const district = searchParams.get('district') ?? '';
+  const cuisine = searchParams.get('cuisine') ?? '';
   const includeAbsent = searchParams.get('include_absent') === '1';
   const page = Math.max(1, Number.parseInt(searchParams.get('page') ?? '1', 10) || 1);
+
+  // Cuisine facets only exist once enrichment data lands; the filter renders
+  // itself out when there is nothing to filter on.
+  const { data: cuisineData } = useApi((signal) => fetchCuisines(signal), []);
+  const cuisines = cuisineData?.cuisines ?? [];
 
   const [qInput, setQInput] = useState(q);
 
@@ -71,16 +77,17 @@ export default function Browse() {
           q: q || undefined,
           source: validSource,
           district: district || undefined,
+          cuisine: cuisine || undefined,
           include_absent: includeAbsent,
           page,
           page_size: PAGE_SIZE
         },
         signal
       ),
-    [q, source, district, includeAbsent, page]
+    [q, source, district, cuisine, includeAbsent, page]
   );
 
-  const hasFilters = !!(q || source || district || includeAbsent);
+  const hasFilters = !!(q || source || district || cuisine || includeAbsent);
 
   function clearFilters() {
     setQInput('');
@@ -143,6 +150,23 @@ export default function Browse() {
             ))}
           </select>
         </div>
+        {cuisines.length > 0 ? (
+          <div className="field">
+            <label htmlFor="browse-cuisine">{t('browse.cuisine_label')}</label>
+            <select
+              id="browse-cuisine"
+              value={cuisine}
+              onChange={(e) => updateParam('cuisine', e.target.value)}
+            >
+              <option value="">{t('browse.cuisine_all')}</option>
+              {cuisines.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.value} ({formatNumber(c.count)})
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
         <label className="check" htmlFor="browse-absent">
           <input
             id="browse-absent"

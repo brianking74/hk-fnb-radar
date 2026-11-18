@@ -5,4 +5,6 @@ declare interface Env {
   ASSETS: Fetcher;
   INGEST_SECRET: string;
   PLATFORM_LAUNCHED_AT: string;
+  /** Dev-only tier preview via .dev.vars — never set in production. */
+  TIER_OVERRIDE?: 'free' | 'professional' | 'business';
 }

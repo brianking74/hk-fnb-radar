@@ -6,6 +6,9 @@ import type {
   EntitiesResponse,
   EntityDetailResponse,
   Entity,
+  EntityAttribute,
+  ContactRecord,
+  CuisineFacet,
   ExpiryItem,
   FieldChange,
   MetaResponse,
@@ -179,6 +182,7 @@ apiApp.get('/entities', async (c) => {
   const source = c.req.query('source');
   const district = (c.req.query('district') ?? '').trim();
   const licType = (c.req.query('lic_type') ?? '').trim();
+  const cuisine = (c.req.query('cuisine') ?? '').trim();
   const includeAbsent = c.req.query('include_absent') === '1';
   const page = intParam(c, 'page', 1);
   const pageSize = Math.min(50, Math.max(1, intParam(c, 'page_size', 25)));
@@ -195,6 +199,12 @@ apiApp.get('/entities', async (c) => {
   }
   if (licType) {
     where.push(`lic_type_en = ${bind(licType)}`);
+  }
+  if (cuisine && (await enrichmentReady(DB))) {
+    const p = bind(cuisine);
+    where.push(
+      `EXISTS (SELECT 1 FROM entity_attributes ea WHERE ea.entity_id = entities.id AND ea.kind = 'cuisine' AND ea.value = ${p})`
+    );
   }
   if (q) {
     const like = `%${escapeLike(q)}%`;
@@ -237,6 +247,7 @@ apiApp.get('/entities', async (c) => {
 
 apiApp.get('/entities/:id', async (c) => {
   const { DB } = c.env;
+  const { limits } = await resolveTier(c.env);
   const id = Number.parseInt(c.req.param('id'), 10);
   if (!Number.isFinite(id)) return c.json({ error: 'invalid_id' }, 400);
 
@@ -252,11 +263,27 @@ apiApp.get('/entities/:id', async (c) => {
     .bind(id)
     .all<{ id: number; entity_id: number; source: SourceId; type: SignalType; detected_at: string; detail_json: string | null }>();
 
-  const contactRows = await DB.prepare(
-    `SELECT kind, value, source_name, source_url, retrieved_at FROM entity_contacts WHERE entity_id = ?1`
-  )
-    .bind(id)
-    .all<{ kind: 'website' | 'phone' | 'social'; value: string; source_name: string; source_url: string | null; retrieved_at: string }>();
+  // Enrichment (cuisine + contacts) is a PROFESSIONAL/BUSINESS entitlement,
+  // enforced here server-side: the data is simply not sent to free tiers.
+  const entitled = limits.view_enrichment && (await enrichmentReady(DB));
+  let contacts: ContactRecord[] = [];
+  let attributes: EntityAttribute[] = [];
+  if (entitled) {
+    const [contactRes, attributeRes] = await Promise.all([
+      DB.prepare(
+        `SELECT kind, value, source_name, source_url, retrieved_at FROM entity_contacts WHERE entity_id = ?1 ORDER BY kind, value`
+      )
+        .bind(id)
+        .all<ContactRecord>(),
+      DB.prepare(
+        `SELECT kind, value, source_name, source_url, retrieved_at FROM entity_attributes WHERE entity_id = ?1 ORDER BY kind, value`
+      )
+        .bind(id)
+        .all<EntityAttribute>()
+    ]);
+    contacts = contactRes.results;
+    attributes = attributeRes.results;
+  }
 
   const def = SOURCES[row.source];
   const body: EntityDetailResponse = {
@@ -281,7 +308,9 @@ apiApp.get('/entities/:id', async (c) => {
         status: row.status === 'absent' ? 'absent' : 'active'
       }
     })),
-    contacts: contactRows.results,
+    contacts,
+    attributes,
+    enrichment_entitled: entitled,
     attribution: [
       {
         dataset: def.label_en,
@@ -305,7 +334,7 @@ apiApp.get('/signals', async (c) => {
 
 apiApp.get('/wine-spirits/stats', async (c) => {
   const { DB } = c.env;
-  const { limits } = await resolveTier(c.env.DB);
+  const { limits } = await resolveTier(c.env);
   const today = hktToday();
   const horizon = addDaysISO(today, limits.expiry_window_days);
 
@@ -340,7 +369,7 @@ apiApp.get('/wine-spirits/signals', async (c) => {
 
 apiApp.get('/wine-spirits/expiry', async (c) => {
   const { DB } = c.env;
-  const { limits } = await resolveTier(c.env.DB);
+  const { limits } = await resolveTier(c.env);
   const today = hktToday();
   const requested = Number.parseInt(c.req.query('window') ?? '', 10);
   const windowDays = Number.isFinite(requested) && requested >= 1 ? Math.min(requested, limits.expiry_window_days) : limits.expiry_window_days;
@@ -488,6 +517,195 @@ apiApp.delete('/admin/keyset', async (c) => {
   return c.json({ ok: true, deleted: `snap/${source}/${date}/keyset.json` });
 });
 
+// The enrichment tables may lag the deployed code (migration applied after
+// deploy, or free-tier D1 quota exhausted). Degrade to empty rather than 500.
+async function enrichmentReady(db: D1Database): Promise<boolean> {
+  try {
+    const row = await db
+      .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'entity_attributes'`)
+      .first<{ name: string }>();
+    return !!row;
+  } catch {
+    return false;
+  }
+}
+
+// Enrichment facets: distinct cuisine values across active entities.
+apiApp.get('/attributes/cuisines', async (c) => {
+  if (!(await enrichmentReady(c.env.DB))) return c.json({ cuisines: [] } satisfies { cuisines: CuisineFacet[] });
+  const rows = await c.env.DB.prepare(
+    `SELECT a.value AS value, COUNT(*) AS count
+     FROM entity_attributes a JOIN entities e ON e.id = a.entity_id
+     WHERE a.kind = 'cuisine' AND e.status = 'active'
+     GROUP BY a.value ORDER BY COUNT(*) DESC, a.value LIMIT 60`
+  ).all<CuisineFacet>();
+  return c.json({ cuisines: rows.results } satisfies { cuisines: CuisineFacet[] });
+});
+
+// Admin: ingest verified enrichment. Every item must carry source attribution;
+// items without an attributable, existing licence are rejected, never guessed.
+interface AttributeInput {
+  source?: string;
+  licno?: string;
+  kind?: string;
+  value?: string;
+  source_name?: string;
+  source_url?: string | null;
+  retrieved_at?: string;
+}
+
+async function resolveEntityIds(
+  db: D1Database,
+  groups: Map<SourceId, string[]>
+): Promise<Map<string, number>> {
+  const idByLic = new Map<string, number>();
+  for (const [source, licnos] of groups) {
+    const unique = [...new Set(licnos)];
+    for (let i = 0; i < unique.length; i += 80) {
+      const chunk = unique.slice(i, i + 80);
+      const placeholders = chunk.map((_, j) => `?${j + 2}`).join(', ');
+      const res = await db
+        .prepare(`SELECT id, licno FROM entities WHERE source = ?1 AND licno IN (${placeholders})`)
+        .bind(source, ...chunk)
+        .all<{ id: number; licno: string }>();
+      for (const r of res.results) idByLic.set(`${source}:${r.licno}`, r.id);
+    }
+  }
+  return idByLic;
+}
+
+apiApp.post('/admin/attributes', async (c) => {
+  if (!ingestAuthorized(c.env, c.req.header('x-ingest-secret'))) return c.json({ error: 'unauthorized' }, 401);
+  if (!(await enrichmentReady(c.env.DB))) return c.json({ error: 'enrichment_not_migrated' }, 503);
+  const body = await c.req.json<{ items?: AttributeInput[] }>().catch(() => null);
+  const items = Array.isArray(body?.items) ? body!.items : [];
+  if (items.length === 0 || items.length > 500) return c.json({ error: 'items must number 1..500' }, 400);
+
+  const valid: { source: SourceId; licno: string; kind: EntityAttribute['kind']; value: string; source_name: string; source_url: string | null; retrieved_at: string }[] = [];
+  const rejected: number[] = [];
+  items.forEach((it, i) => {
+    const kind = it?.kind;
+    if (
+      !isSourceId(it?.source) ||
+      !it?.licno?.trim() ||
+      (kind !== 'cuisine' && kind !== 'category' && kind !== 'other') ||
+      !it?.value?.trim() ||
+      !it?.source_name?.trim()
+    ) {
+      rejected.push(i);
+      return;
+    }
+    valid.push({
+      source: it.source!,
+      licno: it.licno!.trim(),
+      kind,
+      value: it.value!.trim(),
+      source_name: it.source_name!.trim(),
+      source_url: it.source_url ?? null,
+      retrieved_at: it.retrieved_at ?? new Date().toISOString()
+    });
+  });
+
+  const groups = new Map<SourceId, string[]>();
+  for (const v of valid) {
+    const list = groups.get(v.source) ?? [];
+    list.push(v.licno);
+    groups.set(v.source, list);
+  }
+  const idByLic = await resolveEntityIds(c.env.DB, groups);
+
+  const matched = valid.filter((v) => idByLic.has(`${v.source}:${v.licno}`));
+  const statements = matched.map((v) =>
+    c.env.DB
+      .prepare(
+        `INSERT OR IGNORE INTO entity_attributes (entity_id, kind, value, source_name, source_url, retrieved_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)`
+      )
+      .bind(idByLic.get(`${v.source}:${v.licno}`), v.kind, v.value, v.source_name, v.source_url, v.retrieved_at)
+  );
+  let inserted = 0;
+  for (let i = 0; i < statements.length; i += 100) {
+    const results = await c.env.DB.batch(statements.slice(i, i + 100));
+    for (const r of results) inserted += r.meta?.changes ?? 0;
+  }
+
+  return c.json({
+    ok: true,
+    received: items.length,
+    valid: valid.length,
+    inserted,
+    duplicates_ignored: matched.length - inserted,
+    unmatched_licno: valid.length - matched.length,
+    rejected
+  });
+});
+
+// Admin: ingest verified contact records (website / phone / social) with attribution.
+apiApp.post('/admin/contacts', async (c) => {
+  if (!ingestAuthorized(c.env, c.req.header('x-ingest-secret'))) return c.json({ error: 'unauthorized' }, 401);
+  const body = await c.req.json<{ items?: AttributeInput[] }>().catch(() => null);
+  const items = Array.isArray(body?.items) ? body!.items : [];
+  if (items.length === 0 || items.length > 500) return c.json({ error: 'items must number 1..500' }, 400);
+
+  const valid: { source: SourceId; licno: string; kind: ContactRecord['kind']; value: string; source_name: string; source_url: string | null; retrieved_at: string }[] = [];
+  const rejected: number[] = [];
+  items.forEach((it, i) => {
+    const kind = it?.kind;
+    if (
+      !isSourceId(it?.source) ||
+      !it?.licno?.trim() ||
+      (kind !== 'website' && kind !== 'phone' && kind !== 'social') ||
+      !it?.value?.trim() ||
+      !it?.source_name?.trim()
+    ) {
+      rejected.push(i);
+      return;
+    }
+    valid.push({
+      source: it.source!,
+      licno: it.licno!.trim(),
+      kind,
+      value: it.value!.trim(),
+      source_name: it.source_name!.trim(),
+      source_url: it.source_url ?? null,
+      retrieved_at: it.retrieved_at ?? new Date().toISOString()
+    });
+  });
+
+  const groups = new Map<SourceId, string[]>();
+  for (const v of valid) {
+    const list = groups.get(v.source) ?? [];
+    list.push(v.licno);
+    groups.set(v.source, list);
+  }
+  const idByLic = await resolveEntityIds(c.env.DB, groups);
+
+  const matched = valid.filter((v) => idByLic.has(`${v.source}:${v.licno}`));
+  const statements = matched.map((v) =>
+    c.env.DB
+      .prepare(
+        `INSERT OR IGNORE INTO entity_contacts (entity_id, kind, value, source_name, source_url, retrieved_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)`
+      )
+      .bind(idByLic.get(`${v.source}:${v.licno}`), v.kind, v.value, v.source_name, v.source_url, v.retrieved_at)
+  );
+  let inserted = 0;
+  for (let i = 0; i < statements.length; i += 100) {
+    const results = await c.env.DB.batch(statements.slice(i, i + 100));
+    for (const r of results) inserted += r.meta?.changes ?? 0;
+  }
+
+  return c.json({
+    ok: true,
+    received: items.length,
+    valid: valid.length,
+    inserted,
+    duplicates_ignored: matched.length - inserted,
+    unmatched_licno: valid.length - matched.length,
+    rejected
+  });
+});
+
 apiApp.post('/admin/ingest', async (c) => {
   const secret = c.env.INGEST_SECRET;
   if (!secret) return c.json({ error: 'ingest_secret_not_configured' }, 503);
@@ -503,7 +721,7 @@ async function listSignals(
   forcedSource: SourceId | null
 ): Promise<Response> {
   const { DB } = c.env;
-  const { limits } = await resolveTier(c.env.DB);
+  const { limits } = await resolveTier(c.env);
 
   const typeParam = c.req.query('type');
   const sourceParam = forcedSource ?? c.req.query('source');

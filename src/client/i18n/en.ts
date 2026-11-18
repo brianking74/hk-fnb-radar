@@ -108,6 +108,8 @@ const en = {
     source_all: 'All datasets',
     district_label: 'District',
     district_all: 'All districts',
+    cuisine_label: 'Cuisine',
+    cuisine_all: 'All cuisines',
     include_absent: 'Show records no longer appearing',
     clear_filters: 'Clear filters',
     count_one: '{{count}} record',
@@ -208,6 +210,8 @@ const en = {
     meta_address: 'Address',
     endorsements: 'Endorsements',
     conditions: 'Conditions',
+    cuisine: 'Cuisine & classification',
+    cuisine_empty: 'No verified cuisine classification for this record yet.',
     history: 'Signal history',
     history_empty: 'No signals recorded for this licence yet.',
     attribution: 'Source attribution',
@@ -215,7 +219,15 @@ const en = {
     attr_provider: 'Provider',
     attr_coverage: 'Coverage',
     contacts: 'Contacts',
-    contacts_empty: 'Contact enrichment is not yet available (planned for a later release).',
+    contacts_empty: 'No verified contact details for this record yet.',
+    contacts_premium_title: 'Contacts & cuisine — PROFESSIONAL feature',
+    contacts_premium_body:
+      'Verified contact details and cuisine classifications are included with the PROFESSIONAL and BUSINESS plans. Free accounts keep full access to all licence data and signals.',
+    find_elsewhere: 'Find this business elsewhere',
+    find_elsewhere_note:
+      'Neutral search links to third-party public directories. Their data is never copied onto this platform.',
+    find_google: 'Search on Google Maps',
+    find_openrice: 'Search on OpenRice',
     contact_website: 'Website',
     contact_phone: 'Telephone',
     contact_social: 'Social profile',
@@ -240,9 +252,11 @@ const en = {
     noclaims_title: 'What we do not claim',
     noclaims_body:
       'We never present inferred openings or closures as confirmed facts. “No longer appearing” is a data observation, not a closure record.',
-    contacts_title: 'Contact enrichment policy',
+    contacts_title: 'Contact & cuisine enrichment policy',
     contacts_body:
-      'Only publicly available business websites, telephone numbers and social profiles, each with source attribution. Never fabricated. Not yet available — planned for a later release.',
+      'Enrichment — cuisine classification, business websites, telephone numbers and social profiles — is added only from verifiable public sources. Every value carries its source and retrieval date. Nothing is ever fabricated, and unmatched records are rejected rather than guessed.',
+    contacts_body2:
+      'Sources are used under their own terms: third-party platforms such as Google Places with required attribution, and manual verification by our team. Enrichment fields are a PROFESSIONAL and BUSINESS plan feature. Where no enriched data exists yet, record pages offer neutral search links to third-party directories (Google Maps, OpenRice) — links only; third-party data is never copied onto this platform.',
     tiers_title: 'Tier limits',
     tiers_col_tier: 'Tier',
     tiers_col_signals: 'Signals',
@@ -255,11 +269,11 @@ const en = {
     tier_pro: 'PROFESSIONAL · HK$149/month',
     tier_pro_signals: '90-day signals',
     tier_pro_expiry: '180-day expiry watch',
-    tier_pro_extra: 'CSV export · Saved searches',
+    tier_pro_extra: 'Cuisine & contacts · CSV export · Saved searches',
     tier_business: 'BUSINESS · HK$299/month',
     tier_business_signals: '365-day signals',
     tier_business_expiry: '365-day expiry watch',
-    tier_business_extra: 'Saved searches ×200 · API access'
+    tier_business_extra: 'Cuisine & contacts · Saved searches ×200 · API access'
   },
   pricing: {
     intro: 'Simple tiers for suppliers of every size.',
@@ -278,9 +292,11 @@ const en = {
     pro_f2: '180-day expiry watch',
     pro_f3: 'CSV export',
     pro_f4: 'Saved searches',
+    pro_f5: 'Cuisine & contact data (rolling out)',
     business_f1: '365-day signals & expiry watch',
     business_f2: 'Saved searches ×200',
-    business_f3: 'API access'
+    business_f3: 'API access',
+    business_f4: 'Cuisine & contact data (rolling out)'
   },
   notfound: {
     code: '404',

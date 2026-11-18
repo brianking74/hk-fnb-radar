@@ -24,8 +24,15 @@ describe('tier configuration', () => {
 
 describe('resolveTier (Release 1)', () => {
   it('resolves every request to FREE while there is no authentication', async () => {
-    const resolved = await resolveTier(null as unknown as D1Database);
+    const resolved = await resolveTier({} as Env);
     expect(resolved.tier).toBe('free');
     expect(resolved.limits).toBe(TIER_LIMITS.free);
+  });
+
+  it('honours the dev-only TIER_OVERRIDE preview seam', async () => {
+    const pro = await resolveTier({ TIER_OVERRIDE: 'professional' } as Env);
+    expect(pro.tier).toBe('professional');
+    expect(pro.limits).toBe(TIER_LIMITS.professional);
+    expect(pro.limits.view_enrichment).toBe(true);
   });
 });

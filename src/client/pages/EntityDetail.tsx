@@ -149,6 +149,25 @@ export default function EntityDetail() {
         </section>
       ) : null}
 
+      {data.enrichment_entitled && data.attributes.length > 0 ? (
+        <section>
+          <h2 className="section-title">{t('entity.cuisine')}</h2>
+          <div className="rule-double rule-double--tight" aria-hidden="true" />
+          <ul className="chip-list">
+            {data.attributes
+              .filter((a) => a.kind === 'cuisine' || a.kind === 'category')
+              .map((a, i) => (
+                <li className="chip" key={`${a.kind}-${i}`}>
+                  {a.value}
+                  <span className="chip__src">
+                    {t('entity.contact_via', { source: a.source_name, date: formatDate(a.retrieved_at) })}
+                  </span>
+                </li>
+              ))}
+          </ul>
+        </section>
+      ) : null}
+
       <section>
         <h2 className="section-title">{t('entity.history')}</h2>
         <div className="rule-double rule-double--tight" aria-hidden="true" />
@@ -166,7 +185,14 @@ export default function EntityDetail() {
       <section>
         <h2 className="section-title">{t('entity.contacts')}</h2>
         <div className="rule-double rule-double--tight" aria-hidden="true" />
-        {data.contacts.length === 0 ? (
+        {!data.enrichment_entitled ? (
+          <div className="attribution-box">
+            <p className="tier-card__tier">{t('entity.contacts_premium_title')}</p>
+            <p className="notice" style={{ marginTop: 8 }}>
+              {t('entity.contacts_premium_body')}
+            </p>
+          </div>
+        ) : data.contacts.length === 0 ? (
           <p className="notice">{t('entity.contacts_empty')}</p>
         ) : (
           <ul className="contact-list">
@@ -175,6 +201,34 @@ export default function EntityDetail() {
             ))}
           </ul>
         )}
+      </section>
+
+      <section>
+        <h2 className="section-title">{t('entity.find_elsewhere')}</h2>
+        <div className="rule-double rule-double--tight" aria-hidden="true" />
+        <p className="notice">{t('entity.find_elsewhere_note')}</p>
+        <div className="link-out-row mt-8">
+          <a
+            className="btn btn--secondary"
+            target="_blank"
+            rel="noreferrer"
+            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+              [entity.name_en ?? entity.name_tc, entity.address_en ?? ''].filter(Boolean).join(' ')
+            )}`}
+          >
+            {t('entity.find_google')}
+          </a>
+          <a
+            className="btn btn--secondary"
+            target="_blank"
+            rel="noreferrer"
+            href={`https://www.openrice.com/en/hongkong/sr2.htm?querytext=${encodeURIComponent(
+              entity.name_en ?? entity.name_tc ?? ''
+            )}`}
+          >
+            {t('entity.find_openrice')}
+          </a>
+        </div>
       </section>
 
       <section>

@@ -80,6 +80,7 @@ export default function Methodology() {
         <h2 className="section-title">{t('methodology.contacts_title')}</h2>
         <div className="rule-double rule-double--tight" aria-hidden="true" />
         <p>{t('methodology.contacts_body')}</p>
+        <p className="mt-8">{t('methodology.contacts_body2')}</p>
       </section>
 
       <section>

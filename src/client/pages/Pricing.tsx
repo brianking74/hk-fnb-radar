@@ -24,7 +24,7 @@ export default function Pricing() {
       price: 'HK$149',
       desc: t('pricing.pro_desc'),
       cta: t('pricing.cta_pro'),
-      features: [t('pricing.pro_f1'), t('pricing.pro_f2'), t('pricing.pro_f3'), t('pricing.pro_f4')],
+      features: [t('pricing.pro_f1'), t('pricing.pro_f2'), t('pricing.pro_f3'), t('pricing.pro_f4'), t('pricing.pro_f5')],
       featured: true
     },
     {
@@ -33,7 +33,7 @@ export default function Pricing() {
       price: 'HK$299',
       desc: t('pricing.business_desc'),
       cta: t('pricing.cta_business'),
-      features: [t('pricing.business_f1'), t('pricing.business_f2'), t('pricing.business_f3')],
+      features: [t('pricing.business_f1'), t('pricing.business_f2'), t('pricing.business_f3'), t('pricing.business_f4')],
       featured: false
     }
   ];

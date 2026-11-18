@@ -2,6 +2,7 @@
 // useApi hook. Same-origin endpoints — no base URL needed. No react-query.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
+  CuisineFacet,
   EntitiesResponse,
   Entity,
   EntityDetailResponse,
@@ -65,6 +66,7 @@ export interface EntitiesParams {
   source?: SourceId;
   district?: string;
   lic_type?: string;
+  cuisine?: string;
   page?: number;
   page_size?: number;
   include_absent?: boolean;
@@ -110,6 +112,10 @@ export function fetchMeta(signal?: AbortSignal): Promise<MetaResponse> {
   return getJson('/api/meta', signal);
 }
 
+export function fetchCuisines(signal?: AbortSignal): Promise<{ cuisines: CuisineFacet[] }> {
+  return getJson('/api/attributes/cuisines', signal);
+}
+
 export function fetchEntities(params: EntitiesParams, signal?: AbortSignal): Promise<EntitiesResponse> {
   return getJson(
     buildPath('/api/entities', {
@@ -117,6 +123,7 @@ export function fetchEntities(params: EntitiesParams, signal?: AbortSignal): Pro
       source: params.source,
       district: params.district,
       lic_type: params.lic_type,
+      cuisine: params.cuisine,
       page: params.page,
       page_size: params.page_size,
       include_absent: params.include_absent ? 1 : undefined

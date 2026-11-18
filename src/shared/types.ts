@@ -74,6 +74,19 @@ export interface ContactRecord {
   retrieved_at: string;
 }
 
+export interface EntityAttribute {
+  kind: 'cuisine' | 'category' | 'other';
+  value: string;
+  source_name: string;
+  source_url: string | null;
+  retrieved_at: string;
+}
+
+export interface CuisineFacet {
+  value: string;
+  count: number;
+}
+
 export interface SourceAttribution {
   dataset: string;
   provider: string;
@@ -115,6 +128,9 @@ export interface EntityDetailResponse {
   entity: Entity;
   signals: SignalListItem[];
   contacts: ContactRecord[];
+  attributes: EntityAttribute[];
+  /** false when the resolved tier may not view enrichment (free plan). */
+  enrichment_entitled: boolean;
   attribution: SourceAttribution[];
 }
 

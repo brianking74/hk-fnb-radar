@@ -1235,3 +1235,37 @@ table.table {
     align-items: stretch;
   }
 }
+
+/* Cuisine / classification chips (entity detail) */
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  border: 1px solid var(--line-strong, #c9c3b4);
+  border-radius: 999px;
+  padding: 5px 14px;
+  background: var(--surface, #fff);
+  font-size: 13.5px;
+  color: var(--ink, var(--charcoal, #172b2a));
+}
+
+.chip__src {
+  color: var(--ink-soft, #4c5f5d);
+  font-size: 11px;
+}
+
+/* Neutral third-party search links (entity detail) */
+.link-out-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
