@@ -1,0 +1,33 @@
+// HK F&B RADAR — Cloudflare Worker (API + static assets), D1 database, R2 raw store, daily cron.
+// INGEST_SECRET is a Worker secret: `npx wrangler secret put INGEST_SECRET`
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "hkfbradar",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "hkfbradar",
+      // Placeholder until `wrangler d1 create hkfbradar` — replace with the real UUID at deploy time.
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ],
+  "r2_buckets": [
+    { "binding": "RAW", "bucket_name": "hkfbradar-raw" }
+  ],
+  "triggers": {
+    // 01:30 UTC = 09:30 HKT, after the FEHB/LLB datasets refresh at 09:00 HKT.
+    "crons": ["30 1 * * *"]
+  },
+  "observability": { "enabled": true },
+  "vars": {
+    "PLATFORM_LAUNCHED_AT": "2026-11-18"
+  }
+}
