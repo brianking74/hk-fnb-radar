@@ -232,6 +232,7 @@ const en = {
     contact_phone: 'Telephone',
     contact_social: 'Social profile',
     contact_via: 'via {{source}} · retrieved {{date}}',
+    contact_source_link: 'Source page',
     not_found_title: 'Record not found',
     not_found_body: 'This licence record does not exist or is no longer available.',
     back_browse: 'Back to browse'

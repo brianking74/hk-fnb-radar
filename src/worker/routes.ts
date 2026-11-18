@@ -23,6 +23,7 @@ import type {
 } from '../shared/types';
 import { SOURCES, SOURCE_IDS, isSourceId } from '../shared/sources';
 import { resolveTier } from './entitlements';
+import { searchPlacesForEntity } from './enrich/places';
 import { addDaysISO, daysBetween, hktToday } from './util/dates';
 import { ingestAll } from './ingest/ingest';
 
@@ -703,6 +704,137 @@ apiApp.post('/admin/contacts', async (c) => {
     duplicates_ignored: matched.length - inserted,
     unmatched_licno: valid.length - matched.length,
     rejected
+  });
+});
+
+// Admin: Google Places (New) enrichment, in resumable batches. Each call
+// processes up to `limit` (max 25 — subrequest budget) entities of one source
+// that have no Google Places enrichment yet, matches conservatively, and
+// stores cuisine + website/phone contacts with full attribution. A processed
+// marker attribute prevents re-querying records that produced no cuisine.
+apiApp.post('/admin/enrich-places', async (c) => {
+  if (!ingestAuthorized(c.env, c.req.header('x-ingest-secret'))) return c.json({ error: 'unauthorized' }, 401);
+  if (!(await enrichmentReady(c.env.DB))) return c.json({ error: 'enrichment_not_migrated' }, 503);
+  const apiKey = c.env.GOOGLE_PLACES_API_KEY;
+  if (!apiKey) return c.json({ error: 'places_key_not_configured' }, 503);
+
+  const body = await c.req
+    .json<{ source?: string; limit?: number; dry_run?: boolean }>()
+    .catch(() => null);
+  const source = isSourceId(body?.source) ? body.source : 'restaurants';
+  const limit = Math.min(25, Math.max(1, Number.parseInt(String(body?.limit ?? 20), 10) || 20));
+  const dryRun = body?.dry_run === true;
+
+  const rows = await c.env.DB.prepare(
+    `SELECT ${ENTITY_COLS.replace(/\b(\w+)\b/g, 'e.$1')} FROM entities e
+     WHERE e.source = ?1 AND e.status = 'active'
+       AND NOT EXISTS (
+         SELECT 1 FROM entity_attributes a
+         WHERE a.entity_id = e.id AND a.source_name = 'Google Places'
+       )
+     ORDER BY e.id LIMIT ?2`
+  )
+    .bind(source, limit)
+    .all<EntityRow>();
+
+  const results: Record<string, unknown>[] = [];
+  let enriched = 0;
+  let no_match = 0;
+  let errors = 0;
+
+  for (const row of rows.results) {
+    try {
+      const match = await searchPlacesForEntity(apiKey, entityFromRow(row));
+      if (!match) {
+        results.push({ licno: row.licno, status: 'no_match' });
+        no_match++;
+        continue;
+      }
+      if (dryRun) {
+        results.push({
+          licno: row.licno,
+          status: 'matched_dry_run',
+          cuisine: match.cuisine,
+          matched_name: match.matchedName,
+          address: match.address
+        });
+        continue;
+      }
+      const statements = [];
+      if (match.cuisine) {
+        statements.push(
+          c.env.DB
+            .prepare(
+              `INSERT OR IGNORE INTO entity_attributes (entity_id, kind, value, source_name, source_url, retrieved_at)
+               VALUES (?1, 'cuisine', ?2, 'Google Places', ?3, ?4)`
+            )
+            .bind(row.id, match.cuisine, match.mapsUri, new Date().toISOString())
+        );
+      }
+      for (const contact of [
+        match.website ? ({ kind: 'website' as const, value: match.website }) : null,
+        match.phone ? ({ kind: 'phone' as const, value: match.phone }) : null
+      ]) {
+        if (!contact) continue;
+        statements.push(
+          c.env.DB
+            .prepare(
+              `INSERT OR IGNORE INTO entity_contacts (entity_id, kind, value, source_name, source_url, retrieved_at)
+               VALUES (?1, ?2, ?3, 'Google Places', ?4, ?5)`
+            )
+            .bind(row.id, contact.kind, contact.value, match.mapsUri, new Date().toISOString())
+        );
+      }
+      // Processed marker: prevents this entity being re-queried even when
+      // Google returned no usable cuisine.
+      statements.push(
+        c.env.DB
+          .prepare(
+            `INSERT OR IGNORE INTO entity_attributes (entity_id, kind, value, source_name, source_url, retrieved_at)
+             VALUES (?1, 'other', ?2, 'Google Places', ?3, ?4)`
+          )
+          .bind(row.id, `places_checked:${match.matchedName}`, match.mapsUri, new Date().toISOString())
+      );
+      if (statements.length > 0) await c.env.DB.batch(statements);
+      enriched++;
+      results.push({
+        licno: row.licno,
+        status: 'enriched',
+        cuisine: match.cuisine,
+        matched_name: match.matchedName,
+        contacts_added: statements.length - (match.cuisine ? 1 : 0) - 1
+      });
+    } catch (err) {
+      errors++;
+      results.push({
+        licno: row.licno,
+        status: 'error',
+        error: err instanceof Error ? err.message.slice(0, 160) : String(err).slice(0, 160)
+      });
+    }
+  }
+
+  const remainingRow = await c.env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM entities e
+     WHERE e.source = ?1 AND e.status = 'active'
+       AND NOT EXISTS (
+         SELECT 1 FROM entity_attributes a
+         WHERE a.entity_id = e.id AND a.source_name = 'Google Places'
+       )`
+  )
+    .bind(source)
+    .first<{ n: number }>();
+
+  return c.json({
+    ok: true,
+    source,
+    processed: rows.results.length,
+    enriched,
+    no_match,
+    errors,
+    dry_run: dryRun,
+    remaining: remainingRow?.n ?? 0,
+    results
   });
 });
 

@@ -324,7 +324,7 @@ function ContactLine({ contact }: { contact: ContactRecord }) {
         <>
           {' · '}
           <a href={contact.source_url} target="_blank" rel="noreferrer">
-            {contact.source_url}
+            {t('entity.contact_source_link')}
           </a>
         </>
       ) : null}
