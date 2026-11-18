@@ -196,6 +196,7 @@ const en = {
   },
   entity: {
     licno: 'Licence no.',
+    details: 'Licence details',
     source: 'Source dataset',
     meta_lic_type: 'Licence type',
     meta_district: 'District',

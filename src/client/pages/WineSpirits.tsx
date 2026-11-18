@@ -215,7 +215,7 @@ function WineSignalsTab({
 
 /* ------------------------------------------------------------------- expiry */
 
-function WineExpiryTab({ districtOptions, updateParam, searchParams }: Omit<TabProps, 'clearParams'>) {
+function WineExpiryTab({ districtOptions, updateParam, searchParams }: TabProps) {
   const { t } = useTranslation();
   const district = searchParams.get('district') ?? '';
   const windowRaw = Number.parseInt(searchParams.get('window') ?? '', 10);
@@ -453,9 +453,28 @@ function WineDirectoryTab({ districtOptions, updateParam, clearParams, searchPar
   );
 }
 
-function ExpiryRow({ item }: { item: ExpiryItem }) {
+function DirectoryRow({ entity, onOpen }: { entity: Entity; onOpen: () => void }) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
-  const urgent = item.days_left < 30;
   return (
-    <tr className="is-clickable" onClick={() => navigate(`/entity/${item.id}`)}>
+    <tr className="is-clickable" onClick={onOpen}>
+      <td>
+        <Link to={`/entity/${entity.id}`}>{displayName(entity.name_en, entity.name_tc, entity.licno)}</Link>
+        {entity.name_en && entity.name_tc ? <div className="tc-line">{entity.name_tc}</div> : null}
+      </td>
+      <td className="num">{entity.licno}</td>
+      <td>{entity.district_en ?? t('common.na')}</td>
+      <td>{entity.lic_type_en ?? t('common.na')}</td>
+      <td className="num">{formatDate(entity.expiry_date)}</td>
+      <td>
+        <StatusBadge status={entity.status} />
+      </td>
+    </tr>
+  );
+}
+
+interface TabProps {
+  districtOptions: { en: string; tc: string | null; count: number }[];
+  updateParam: (key: string, value: string, keepPage?: boolean) => void;
+  clearParams: (keys: string[]) => void;
+  searchParams: URLSearchParams;
+}

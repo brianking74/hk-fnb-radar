@@ -27,6 +27,8 @@ function fieldLabel(field: string, t: (key: string) => string): string {
   return key ? t(key) : field;
 }
 
+export { fieldLabel as signalFieldLabel };
+
 function ChangeList({ changes, t }: { changes: FieldChange[]; t: (key: string) => string }) {
   return (
     <div>

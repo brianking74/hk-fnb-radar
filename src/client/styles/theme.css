@@ -68,6 +68,7 @@ p {
 
 a {
   color: var(--tram);
+  text-decoration: none;
 }
 
 a:hover {
@@ -627,6 +628,11 @@ table.table {
 }
 
 .table .is-urgent {
+  color: var(--signage);
+  font-weight: 600;
+}
+
+.is-urgent-text {
   color: var(--signage);
   font-weight: 600;
 }
