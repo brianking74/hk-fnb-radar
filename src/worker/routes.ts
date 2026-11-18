@@ -434,6 +434,59 @@ apiApp.get('/wine-spirits/directory', async (c) => {
 });
 
 // ------------------------------------------------------------------ admin
+// Ops endpoints, gated by the INGEST_SECRET header: trigger/verify
+// ingestion, and inspect/repair snapshot keysets (also used to rehearse
+// drift scenarios against a controlled keyset before real drift arrives).
+
+function ingestAuthorized(env: Env, headerValue: string | undefined): boolean {
+  return !!env.INGEST_SECRET && headerValue === env.INGEST_SECRET;
+}
+
+apiApp.get('/admin/keyset', async (c) => {
+  if (!ingestAuthorized(c.env, c.req.header('x-ingest-secret'))) return c.json({ error: 'unauthorized' }, 401);
+  const source = c.req.query('source');
+  if (!isSourceId(source)) return c.json({ error: 'invalid_source' }, 400);
+
+  let key: string;
+  const date = c.req.query('date');
+  if (date) {
+    key = `snap/${source}/${date}/keyset.json`;
+    if (!(await c.env.RAW.head(key))) return c.json({ error: 'not_found' }, 404);
+  } else {
+    const list = await c.env.RAW.list({ prefix: `snap/${source}/` });
+    const keys = list.objects.map((o) => o.key).filter((k) => k.endsWith('/keyset.json')).sort();
+    const newest = keys[keys.length - 1];
+    if (!newest) return c.json({ error: 'not_found' }, 404);
+    key = newest;
+  }
+  const obj = await c.env.RAW.get(key);
+  if (!obj) return c.json({ error: 'not_found' }, 404);
+  const data = await obj.json<Record<string, string>>();
+  return c.json({ key, count: Object.keys(data).length, data });
+});
+
+apiApp.put('/admin/keyset', async (c) => {
+  if (!ingestAuthorized(c.env, c.req.header('x-ingest-secret'))) return c.json({ error: 'unauthorized' }, 401);
+  const body = await c.req
+    .json<{ source?: string; date?: string; data?: Record<string, string> }>()
+    .catch(() => null);
+  if (!body || !isSourceId(body.source) || !body.date || !/^\d{4}-\d{2}-\d{2}$/.test(body.date)) {
+    return c.json({ error: 'bad_request' }, 400);
+  }
+  if (!body.data || typeof body.data !== 'object') return c.json({ error: 'bad_request' }, 400);
+  const key = `snap/${body.source}/${body.date}/keyset.json`;
+  await c.env.RAW.put(key, JSON.stringify(body.data));
+  return c.json({ ok: true, key, count: Object.keys(body.data).length });
+});
+
+apiApp.delete('/admin/keyset', async (c) => {
+  if (!ingestAuthorized(c.env, c.req.header('x-ingest-secret'))) return c.json({ error: 'unauthorized' }, 401);
+  const source = c.req.query('source');
+  const date = c.req.query('date');
+  if (!isSourceId(source) || !date) return c.json({ error: 'bad_request' }, 400);
+  await c.env.RAW.delete(`snap/${source}/${date}/keyset.json`);
+  return c.json({ ok: true, deleted: `snap/${source}/${date}/keyset.json` });
+});
 
 apiApp.post('/admin/ingest', async (c) => {
   const secret = c.env.INGEST_SECRET;

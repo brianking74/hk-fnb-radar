@@ -100,7 +100,9 @@ async function chunked<T>(items: T[], size: number, fn: (chunk: T[]) => Promise<
   }
 }
 
-async function findPreviousKeyset(r2: R2Bucket, source: SourceId, today: string): Promise<{ key: string } | null> {
+async function findPreviousKeyset(r2: R2Bucket, source: SourceId): Promise<{ key: string } | null> {
+  // The most recent stored keyset is the diff base — including one written
+  // earlier the same day (manual re-runs must not re-detect everything).
   const seen: string[] = [];
   let cursor: string | undefined;
   do {
@@ -112,7 +114,7 @@ async function findPreviousKeyset(r2: R2Bucket, source: SourceId, today: string)
   const candidates = seen
     .map((key) => {
       const m = key.match(/^snap\/[^/]+\/(\d{4}-\d{2}-\d{2})\/keyset\.json$/);
-      return m && m[1] !== today ? { key, date: m[1] } : null;
+      return m ? { key, date: m[1] } : null;
     })
     .filter((v): v is { key: string; date: string } => v !== null)
     .sort((a, b) => (a.date < b.date ? 1 : -1));
@@ -169,7 +171,7 @@ export async function ingestSource(env: Env, source: SourceId, dateStamp: string
   });
 
   // 5. Previous keyset from R2 (if any).
-  const prevRef = await findPreviousKeyset(env.RAW, source, dateStamp);
+  const prevRef = await findPreviousKeyset(env.RAW, source);
   let previous: Record<string, string> = {};
   if (prevRef) {
     const obj = await env.RAW.get(prevRef.key);
@@ -233,7 +235,8 @@ export async function ingestSource(env: Env, source: SourceId, dateStamp: string
 
   // 9. Mark absent records (in previous keyset, missing now).
   await chunked(diff.removed, 100, async (chunk) => {
-    const placeholders = chunk.map((_, i) => `?${i + 3}`).join(', ');
+    // ?1 snapshot, ?2 now, ?3 source, licences start at ?4.
+    const placeholders = chunk.map((_, i) => `?${i + 4}`).join(', ');
     await env.DB.prepare(
       `UPDATE entities SET status = 'absent', last_seen_snapshot = ?1, last_seen_at = ?2
        WHERE source = ?3 AND licno IN (${placeholders})`
@@ -250,7 +253,7 @@ export async function ingestSource(env: Env, source: SourceId, dateStamp: string
       signalRows.push({
         licno,
         type: 'new_record',
-        detail: { seen_before: prior?.status === 'absent' }
+        detail: { seen_before: !!prior }
       });
     }
     for (const licno of diff.changed) {
