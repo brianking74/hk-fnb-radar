@@ -15,8 +15,7 @@
     {
       "binding": "DB",
       "database_name": "hkfbradar",
-      // Placeholder until `wrangler d1 create hkfbradar` — replace with the real UUID at deploy time.
-      "database_id": "00000000-0000-0000-0000-000000000000"
+      "database_id": "d9dcfb49-0da1-4633-8419-7a815594dc83"
     }
   ],
   "r2_buckets": [
