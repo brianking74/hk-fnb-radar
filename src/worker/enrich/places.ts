@@ -18,6 +18,22 @@ function nameTokens(name: string): string[] {
     .filter((t) => t.length >= 2 && !GENERIC_TOKENS.has(t));
 }
 
+const PLACES_URL = 'https://places.googleapis.com/v1/places:searchText';
+
+/** fetch with one backoff retry on 429/5xx (honours Retry-After when present). */
+async function fetchWithPlacesRetry(url: string, init: RequestInit): Promise<Response> {
+  let res = await fetch(url, init);
+  for (let attempt = 0; attempt < 2 && (res.status === 429 || res.status >= 500); attempt++) {
+    const retryAfter = Number.parseFloat(res.headers.get('retry-after') ?? '');
+    const waitMs = Number.isFinite(retryAfter)
+      ? Math.min(Math.max(retryAfter * 1000, 1000), 8000)
+      : 2000 * (attempt + 1);
+    await new Promise((r) => setTimeout(r, waitMs));
+    res = await fetch(url, init);
+  }
+  return res;
+}
+
 export interface PlacesCandidate {
   displayName: string;
   formattedAddress: string | null;
@@ -129,7 +145,7 @@ export async function searchPlacesForEntity(
   const parts = [name, entity.district_en, 'Hong Kong'].filter(Boolean);
   const textQuery = parts.join(', ');
 
-  const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+  const res = await fetchWithPlacesRetry(PLACES_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
