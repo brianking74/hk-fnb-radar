@@ -20,15 +20,12 @@ function nameTokens(name: string): string[] {
 
 const PLACES_URL = 'https://places.googleapis.com/v1/places:searchText';
 
-/** fetch with one backoff retry on 429/5xx (honours Retry-After when present). */
+/** fetch with ONE retry, 5xx/network only. Never retry 429 — every successful
+ * call is billed, and retry storms are how a run burns 30× its budget. */
 async function fetchWithPlacesRetry(url: string, init: RequestInit): Promise<Response> {
   let res = await fetch(url, init);
-  for (let attempt = 0; attempt < 2 && (res.status === 429 || res.status >= 500); attempt++) {
-    const retryAfter = Number.parseFloat(res.headers.get('retry-after') ?? '');
-    const waitMs = Number.isFinite(retryAfter)
-      ? Math.min(Math.max(retryAfter * 1000, 1000), 8000)
-      : 2000 * (attempt + 1);
-    await new Promise((r) => setTimeout(r, waitMs));
+  if (res.status >= 500) {
+    await new Promise((r) => setTimeout(r, 1500));
     res = await fetch(url, init);
   }
   return res;

@@ -741,9 +741,16 @@ apiApp.post('/admin/enrich-places', async (c) => {
   let enriched = 0;
   let no_match = 0;
   let errors = 0;
+  let googleCalls = 0;
+  const CALL_CEILING = limit; // hard ceiling: at most `limit` Google calls per invocation
 
   for (const row of rows.results) {
+    if (googleCalls >= CALL_CEILING) {
+      results.push({ licno: row.licno, status: 'skipped_call_ceiling' });
+      continue;
+    }
     try {
+      googleCalls++;
       const match = await searchPlacesForEntity(apiKey, entityFromRow(row));
       if (!match) {
         results.push({ licno: row.licno, status: 'no_match' });
@@ -829,6 +836,8 @@ apiApp.post('/admin/enrich-places', async (c) => {
     ok: true,
     source,
     processed: rows.results.length,
+    google_calls: googleCalls,
+    call_ceiling: CALL_CEILING,
     enriched,
     no_match,
     errors,
